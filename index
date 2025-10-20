@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Scanner de ID com Módulo de Inventário</title>
+
+    <meta name="theme-color" content="#06b6d4"/>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Scanner">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192x192.png"> 
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -51,6 +59,7 @@
                     <button data-view="procurar" class="tab-btn tab-active py-2 px-4 font-semibold text-sm sm:text-base">Procurar</button>
                     <button data-view="encontrados" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Encontrados (<span id="found-count">0</span>)</button>
                     <button data-view="dashboard" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Dashboard</button>
+                    <button data-view="analisador" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Analisador</button>
                     <button data-view="inventario" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Inventário</button>
                     <button data-view="excecoes" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Exceções (<span id="exceptions-count">0</span>)</button>
                     <button data-view="log" class="tab-btn tab-inactive py-2 px-4 font-semibold text-sm sm:text-base">Log</button>
@@ -114,6 +123,42 @@
                 </div>
             </div>
 
+            <div data-view-content="analisador" class="hidden space-y-4">
+                <h3 class="text-lg font-bold text-center text-white">Analisador de Listas (Referência Cruzada)</h3>
+                <div class="space-y-2">
+                    <label for="analysis-list-a" class="text-sm font-medium text-slate-300">Lista A (Ex: Ficheiro Principal)</label>
+                    <select id="analysis-list-a" class="w-full bg-slate-700 p-2 rounded-lg text-white">
+                        <option value="">Selecione a Lista A</option>
+                    </select>
+                </div>
+                <div class="space-y-2">
+                    <label for="analysis-list-b" class="text-sm font-medium text-slate-300">Lista B (Ex: Lista de Zona)</label>
+                    <select id="analysis-list-b" class="w-full bg-slate-700 p-2 rounded-lg text-white">
+                        <option value="">Selecione a Lista B</option>
+                    </select>
+                </div>
+                <button id="run-analysis-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-5 rounded-lg">Analisar</button>
+                
+                <div id="analysis-results-container" class="hidden pt-4 border-t border-slate-700 space-y-3">
+                    <h4 class="text-md font-semibold text-center text-white">Resultados da Análise</h4>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-green-800 p-3 rounded-lg">
+                            <span class="block text-2xl font-bold" id="result-ok">--</span>
+                            <span class="text-xs font-medium">OK (Na Lista A e B)</span>
+                        </div>
+                        <div class="bg-orange-800 p-3 rounded-lg">
+                            <span class="block text-2xl font-bold" id="result-sobra">--</span>
+                            <span class="text-xs font-medium">Sobra (Só na Lista B)</span>
+                        </div>
+                        <div class="bg-red-800 p-3 rounded-lg">
+                            <span class="block text-2xl font-bold" id="result-faltantes">--</span>
+                            <span class="text-xs font-medium">Faltantes (Só na Lista A)</span>
+                        </div>
+                    </div>
+                    <button id="export-analysis-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Exportar Análise (.csv)</button>
+                </div>
+            </div>
+
             <div data-view-content="inventario" class="hidden">
                 <h3 class="text-lg font-bold text-center text-white mb-4">Carregar Listas de Inventário por Zona</h3>
                 <div id="inventory-zones-container" class="space-y-4 max-h-64 overflow-y-auto pr-2">
@@ -160,35 +205,29 @@
                 isFastMode: false, 
                 lastScanTime: 0,
                 activeZoneId: null,
-                huntMode: { isActive: false, targetId: null }
+                huntMode: { isActive: false, targetId: null },
+                analysisResult: { ok: [], sobra: [], faltantes: [] } 
             };
             
             const controlsPanel = document.getElementById('controls-panel');
             const panelHandle = document.getElementById('panel-handle');
             
-            // *** CORREÇÃO 1: Adicionada função para reativar o scanner ***
             function resumeScannerIfNeeded() {
-                // Não reative se estivermos no Modo Caça (que deve ficar pausado)
                 if (appState.huntMode.isActive) return; 
 
                 if (appState.html5QrCode) {
-                    // getState(): 0=NOT_STARTED, 1=SCANNING, 2=PAUSED
-                    if (appState.html5QrCode.getState() === 2) { // 2 = PAUSED
-                        try {
+                    try {
+                        if (appState.html5QrCode.getState() === 2) { // 2 = PAUSED
                             appState.html5QrCode.resume();
-                        } catch (e) {
-                            console.error("Falha ao resumir o scanner:", e);
-                            // Se falhar, tente reiniciar
-                            startScanner();
                         }
+                    } catch (e) {
+                        console.error("Falha ao resumir o scanner:", e);
                     }
                 }
             }
 
-            // *** CORREÇÃO 2: togglePanel agora chama a função de resumir ***
             const togglePanel = () => {
                 controlsPanel.classList.toggle('open');
-                // Se o painel for FECHADO, tente resumir o scanner
                 if (!controlsPanel.classList.contains('open')) {
                     resumeScannerIfNeeded();
                 }
@@ -204,7 +243,6 @@
                     controlsPanel.classList.add('open');
                 } else if (touchEndY - touchStartY > 50) {
                     controlsPanel.classList.remove('open');
-                    // *** CORREÇÃO 3: Deslizar para baixo também reativa o scanner ***
                     resumeScannerIfNeeded(); 
                 }
                 touchStartY = 0;
@@ -270,6 +308,7 @@
             function initialize() {
                 loadFromLocalStorage(); 
                 buildInventoryZoneUI(); 
+                buildAnalyzerUI(); // Constroi UI do Analisador
                 
                 document.getElementById('load-file-btn').addEventListener('click', () => document.getElementById('file-input').click());
                 document.getElementById('file-input').addEventListener('change', (e) => handleFileSelect(e, 'main'));
@@ -278,6 +317,9 @@
                 document.getElementById('clear-session-btn').addEventListener('click', clearSession); 
                 document.getElementById('fast-mode-toggle').addEventListener('change', toggleFastMode); 
                 document.getElementById('hunt-toggle-btn').addEventListener('click', toggleHuntMode);
+                // Listeners do Analisador
+                document.getElementById('run-analysis-btn').addEventListener('click', runListAnalysis);
+                document.getElementById('export-analysis-btn').addEventListener('click', exportAnalysisResults);
                 
                 document.body.addEventListener('click', initAudio, { once: true });
                 setupTabs();
@@ -402,33 +444,36 @@
                 }
             }
             
-            // *** CORREÇÃO 4: Lógica do Modo Caça corrigida ***
             function toggleHuntMode() {
                 const targetIdInput = document.getElementById('hunt-target-id');
-                const targetId = targetIdInput.value.trim();
                 
                 if (appState.huntMode.isActive) {
-                    // Desativar modo caça
                     appState.huntMode = { isActive: false, targetId: null };
-                    // FIX: Resume o scanner
-                    if (appState.html5QrCode && appState.html5QrCode.getState() === 2) { // 2 = PAUSED
-                        appState.html5QrCode.resume();
-                    }
+                    try {
+                        if (appState.html5QrCode && appState.html5QrCode.getState() === 2) { 
+                            appState.html5QrCode.resume();
+                        }
+                    } catch (e) { console.warn("Não foi possível resumir o scanner.", e) }
+                    
                 } else {
-                    // Ativar modo caça
-                    if (!targetId) {
+                    const targetId = targetIdInput.value.trim(); 
+                    if (!targetId) { 
                         alert("Por favor, digite um ID para caçar.");
                         return;
                     }
+                    
                     appState.huntMode = { isActive: true, targetId: targetId };
-                    appState.isPaused = false; // Previne a lógica de pausa normal
-                    // FIX: Pausa o scanner
-                    if (appState.html5QrCode && appState.html5QrCode.getState() === 1) { // 1 = SCANNING
-                        appState.html5QrCode.pause(true); 
-                    }
+                    appState.isPaused = false; 
+                    
+                    try {
+                        if (appState.html5QrCode && appState.html5QrCode.getState() === 1) { 
+                            appState.html5QrCode.pause(true); 
+                        }
+                    } catch (e) { console.warn("Não foi possível pausar o scanner.", e) }
                 }
-                updateHuntModeUI();
-                saveToLocalStorage();
+                
+                updateHuntModeUI(); 
+                saveToLocalStorage(); 
             }
 
             function updateHuntModeUI() {
@@ -444,8 +489,8 @@
                     toggleBtn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
                     statusP.textContent = `CAÇANDO: ${appState.huntMode.targetId}`;
                 } else {
-                    targetIdInput.value = '';
-                    targetIdInput.disabled = false;
+                    targetIdInput.value = ''; 
+                    targetIdInput.disabled = false; 
                     toggleBtn.textContent = 'Caçar';
                     toggleBtn.classList.replace('bg-red-600', 'bg-blue-600');
                     toggleBtn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
@@ -478,6 +523,7 @@
                          document.getElementById(`file-info-${zoneId}`).classList.add('text-green-400');
                     }
                     saveToLocalStorage(); 
+                    buildAnalyzerUI(); // Atualiza dropdowns do analisador
                 };
 
                 if (file.name.endsWith('.xlsx')) {
@@ -609,11 +655,112 @@
                             view.classList.toggle('hidden', view.dataset.viewContent !== viewId);
                         });
                         
-                        // *** CORREÇÃO 5: Tente resumir o scanner ao trocar de abas ***
                         resumeScannerIfNeeded();
                     });
                 });
             }
+
+            // --- FUNÇÕES DO ANALISADOR (IDEIA C) ---
+            function buildAnalyzerUI() {
+                const selectA = document.getElementById('analysis-list-a');
+                const selectB = document.getElementById('analysis-list-b');
+                const defaultOption = '<option value="">Selecione uma lista...</option>';
+                
+                selectA.innerHTML = defaultOption;
+                selectB.innerHTML = defaultOption;
+
+                // Adiciona Ficheiro Principal
+                if (appState.idsToFind.size > 0) {
+                    const opt = `<option value="main">Ficheiro Principal (${appState.idsToFind.size} IDs)</option>`;
+                    selectA.innerHTML += opt;
+                    selectB.innerHTML += opt;
+                }
+
+                // Adiciona Zonas Carregadas
+                appState.inventoryZoneData.forEach((idSet, zoneId) => {
+                    if (idSet.size > 0) {
+                        const zone = appState.inventoryZones.find(z => z.id === zoneId);
+                        const zoneName = zone ? zone.name : zoneId;
+                        const opt = `<option value="${zoneId}">${zoneName} (${idSet.size} IDs)</option>`;
+                        selectA.innerHTML += opt;
+                        selectB.innerHTML += opt;
+                    }
+                });
+            }
+
+            function getListSetById(listId) {
+                if (listId === 'main') {
+                    return appState.idsToFind;
+                }
+                return appState.inventoryZoneData.get(listId) || new Set();
+            }
+
+            function runListAnalysis() {
+                const listA_id = document.getElementById('analysis-list-a').value;
+                const listB_id = document.getElementById('analysis-list-b').value;
+
+                if (!listA_id || !listB_id) {
+                    alert("Por favor, selecione ambas as listas para analisar.");
+                    return;
+                }
+
+                const setA = getListSetById(listA_id);
+                const setB = getListSetById(listB_id);
+
+                const ok_ids = [];
+                const sobra_ids = [];
+                const faltantes_ids = Array.from(setA); 
+
+                setB.forEach(id => {
+                    if (setA.has(id)) {
+                        ok_ids.push(id);
+                        const index = faltantes_ids.indexOf(id);
+                        if (index > -1) {
+                            faltantes_ids.splice(index, 1);
+                        }
+                    } else {
+                        sobra_ids.push(id);
+                    }
+                });
+
+                appState.analysisResult = {
+                    ok: ok_ids,
+                    sobra: sobra_ids,
+                    faltantes: faltantes_ids
+                };
+
+                document.getElementById('result-ok').textContent = ok_ids.length;
+                document.getElementById('result-sobra').textContent = sobra_ids.length;
+                document.getElementById('result-faltantes').textContent = faltantes_ids.length;
+                document.getElementById('analysis-results-container').classList.remove('hidden');
+            }
+
+            function exportAnalysisResults() {
+                const { ok, sobra, faltantes } = appState.analysisResult;
+                if (ok.length === 0 && sobra.length === 0 && faltantes.length === 0) {
+                    alert("Nenhum resultado de análise para exportar.");
+                    return;
+                }
+
+                let csvContent = "data:text/csv;charset=utf-8,Itens_OK,Itens_Sobra,Itens_Faltantes\n";
+                
+                const maxLength = Math.max(ok.length, sobra.length, faltantes.length);
+
+                for (let i = 0; i < maxLength; i++) {
+                    const ok_val = ok[i] || '';
+                    const sobra_val = sobra[i] || '';
+                    const faltantes_val = faltantes[i] || '';
+                    csvContent += `"${ok_val}","${sobra_val}","${faltantes_val}"\n`;
+                }
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                const date = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+                link.setAttribute("download", `analise_listas_${date}.csv`);
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            }
+
 
             function exportFoundIds() {
                 if (appState.foundIds.length === 0) { alert("Nenhum ID foi encontrado para exportar."); return; }
@@ -647,15 +794,19 @@
 
             function startScanner() {
                 if (appState.html5QrCode && appState.html5QrCode.isScanning) {
-                    appState.html5QrCode.stop();
+                    try { appState.html5QrCode.stop(); } catch(e) { console.warn("Erro ao parar scanner:", e); }
                 }
                 appState.html5QrCode = new Html5Qrcode("reader");
                 const config = { fps: 15, qrbox: (w, h) => { const s = Math.min(w, h) * 0.8; return { width: s, height: s }; } };
+                
                 appState.html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => processScan(decodedText))
                     .catch(err => {
-                        // Não alerte se já estivermos no modo de caça (o que pausa o scanner)
-                        if (!appState.huntMode.isActive) {
-                             alert("ERRO AO INICIAR A CÂMARA: Por favor, verifique se deu permissão de acesso à câmara.");
+                        if (appState.huntMode.isActive) {
+                             console.warn("Modo caça ativado, scanner pausado por padrão.");
+                        } else {
+                             if (err && err.name !== 'NotAllowedError') {
+                                alert("ERRO AO INICIAR A CÂMARA: " + err.message);
+                             }
                         }
                     });
             }
@@ -708,8 +859,11 @@
                 const foundCount = appState.foundIds.length;
                 const progress = totalItems > 0 ? (foundCount / totalItems * 100) : 0;
                 document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
-                appState.charts.progress.data.datasets[0].data = [progress, 100 - progress];
-                appState.charts.progress.update();
+                
+                if (appState.charts.progress) {
+                    appState.charts.progress.data.datasets[0].data = [progress, 100 - progress];
+                    appState.charts.progress.update();
+                }
 
                 if (appState.scanHistory.length > 1) {
                     const lastScans = appState.scanHistory.slice(-10);
@@ -750,6 +904,9 @@
 
             function createCharts() {
                 const progressCtx = document.getElementById('progressChart').getContext('2d');
+                if (appState.charts.progress) {
+                    appState.charts.progress.destroy();
+                }
                 appState.charts.progress = new Chart(progressCtx, {
                     type: 'doughnut',
                     data: { datasets: [{ data: [0, 100], backgroundColor: ['#0ea5e9', '#334155'], borderColor: '#1e293b', borderWidth: 4, cutout: '75%' }] },
@@ -806,28 +963,33 @@
             
             function playSound(type) {
                 if (!appState.audioContext) return;
-                const osc = appState.audioContext.createOscillator();
-                const gain = appState.audioContext.createGain();
-                osc.connect(gain); gain.connect(appState.audioContext.destination);
-                gain.gain.setValueAtTime(0.3, appState.audioContext.currentTime);
-                
-                if (type === 'success') { 
-                    osc.frequency.setValueAtTime(1200, osc.context.currentTime); 
-                } else if (type === 'error') { 
-                    osc.frequency.setValueAtTime(180, osc.context.currentTime); osc.type = 'square'; 
-                } else if (type === 'warning') { 
-                    osc.frequency.setValueAtTime(600, osc.context.currentTime); osc.type = 'triangle'; 
-                } else if (type === 'warning_missort') {
-                    osc.frequency.setValueAtTime(800, osc.context.currentTime);
-                    osc.frequency.setValueAtTime(400, osc.context.currentTime + 0.07);
-                    osc.type = 'sawtooth';
-                } else if (type === 'hunt_success') {
-                    osc.frequency.setValueAtTime(1000, osc.context.currentTime);
-                    osc.frequency.linearRampToValueAtTime(2000, osc.context.currentTime + 0.3);
+                try {
+                    const osc = appState.audioContext.createOscillator();
+                    const gain = appState.audioContext.createGain();
+                    osc.connect(gain); gain.connect(appState.audioContext.destination);
+                    gain.gain.setValueAtTime(0.3, appState.audioContext.currentTime);
+                    
+                    if (type === 'success') { 
+                        osc.frequency.setValueAtTime(1200, osc.context.currentTime); 
+                    } else if (type === 'error') { 
+                        osc.frequency.setValueAtTime(180, osc.context.currentTime); osc.type = 'square'; 
+                    } else if (type === 'warning') { 
+                        osc.frequency.setValueAtTime(600, osc.context.currentTime); osc.type = 'triangle'; 
+                    } else if (type === 'warning_missort') {
+                        osc.frequency.setValueAtTime(800, osc.context.currentTime);
+                        osc.frequency.setValueAtTime(400, osc.context.currentTime + 0.07);
+                        osc.type = 'sawtooth';
+                    } else if (type === 'hunt_success') {
+                        osc.frequency.setValueAtTime(1000, osc.context.currentTime);
+                        osc.frequency.linearRampToValueAtTime(2000, osc.context.currentTime + 0.3);
+                    }
+                    
+                    osc.start(); 
+                    osc.stop(appState.audioContext.currentTime + (type === 'hunt_success' ? 0.4 : 0.15));
+                } catch (e) {
+                    console.error("Erro ao tocar som:", e);
+                    appState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
-                
-                osc.start(); 
-                osc.stop(osc.context.currentTime + (type === 'hunt_success' ? 0.4 : 0.15));
             }
             
             initialize();
