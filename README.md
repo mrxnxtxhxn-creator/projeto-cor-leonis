@@ -64,6 +64,10 @@
             z-index: 5;
             padding-bottom: calc(4px + env(safe-area-inset-bottom, 0));
         }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -110,6 +114,7 @@
                         </div>
                     </div>
                     <button id="clear-session-btn" class="w-full bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Limpar Sessão (Apagar Dados)</button>
+                    <button id="sync-session-btn" class="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg">Sincronizar Sessão com n8n</button>
                     <div>
                         <label for="manual-input" class="text-xs text-slate-400">Ou digite o ID manualmente:</label>
                         <div class="flex gap-2 mt-1">
@@ -202,13 +207,11 @@
     </div>
 
     <script>
-        // O CÓDIGO JAVASCRIPT CONTINUA EXATAMENTE O MESMO DA ÚLTIMA RESPOSTA...
-        // NÃO PRECISA MUDAR NADA AQUI. COLE TODO O BLOCO JS DA RESPOSTA ANTERIOR.
-        // ... (todo o código JS vai aqui) ...
-
         document.addEventListener('DOMContentLoaded', () => {
             const SCAN_DELAY = 1200;
             const STORAGE_KEY = 'scannerAppState';
+            // URL DO N8N INSERIDA AQUI
+            const N8N_WEBHOOK_URL = 'https://mrxnxtxhxn-creator.app.n8n.cloud/webhook-test/df5b4afe-2fc4-4692-a80f-257aca92edf9'; 
 
             let appState = {
                 currentView: 'procurar',
@@ -332,6 +335,61 @@
                 appState.isFastMode = document.getElementById('fast-mode-toggle').checked;
             }
 
+            async function syncSessionData() {
+                const syncButton = document.getElementById('sync-session-btn');
+                syncButton.textContent = 'Sincronizando...';
+                syncButton.disabled = true; 
+
+                const totalItemsInitial = appState.idsToFind.size + appState.foundIds.length;
+                const progressPercent = totalItemsInitial > 0 ? (appState.foundIds.length / totalItemsInitial * 100) : 0;
+                let averageBPM = null;
+                 if (appState.scanHistory.length > 1) {
+                    const lastScans = appState.scanHistory.slice(-10); 
+                    let totalDiff = 0;
+                    for (let i = 1; i < lastScans.length; i++) totalDiff += (lastScans[i] - lastScans[i-1]);
+                    const avgTimeSeconds = (totalDiff / (lastScans.length - 1)) / 1000;
+                    if (!isNaN(avgTimeSeconds) && avgTimeSeconds > 0) {
+                         averageBPM = Math.round(60 / avgTimeSeconds);
+                    }
+                }
+
+                const dataToSend = {
+                    sessionId: `sessao_${Date.now()}`, 
+                    timestamp: new Date().toISOString(),
+                    foundCount: appState.foundIds.length,
+                    exceptionCount: appState.notFoundIds.length,
+                    zoneFinds: Object.fromEntries(appState.zoneFinds), 
+                    progress: Math.round(progressPercent),
+                    bpm: averageBPM,
+                };
+
+                try {
+                    const response = await fetch(N8N_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(dataToSend),
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json(); 
+                        alert('Sessão sincronizada com sucesso!');
+                        console.log('Resposta do n8n:', result);
+                    } else {
+                        alert(`Erro ao sincronizar: ${response.status} - ${response.statusText}`);
+                        console.error('Erro na resposta do n8n:', response);
+                    }
+                } catch (error) {
+                    alert('Erro de rede ao tentar sincronizar. Verifique sua conexão e a URL do webhook.');
+                    console.error('Erro de fetch:', error);
+                } finally {
+                    syncButton.textContent = 'Sincronizar Sessão com n8n';
+                    syncButton.disabled = false;
+                }
+            }
+
+
             function initialize() {
                 loadFromLocalStorage();
                 buildInventoryZoneUI();
@@ -346,6 +404,7 @@
                 document.getElementById('hunt-toggle-btn').addEventListener('click', toggleHuntMode);
                 document.getElementById('run-analysis-btn').addEventListener('click', runListAnalysis);
                 document.getElementById('export-analysis-btn').addEventListener('click', exportAnalysisResults);
+                document.getElementById('sync-session-btn').addEventListener('click', syncSessionData); 
 
                 document.body.addEventListener('click', initAudio, { once: true });
                 setupTabs();
@@ -373,18 +432,18 @@
                 updateActiveZoneUI(appState.activeZoneId);
                 updateHuntModeUI();
             }
-
+             
             function buildInventoryZoneUI() {
                 const container = document.getElementById('inventory-zones-container');
                 container.innerHTML = `
                     <button id="clear-active-zone-btn" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg text-sm ${appState.activeZoneId ? '' : 'hidden'}">Limpar Zona Ativa</button>
                 `;
-
+                
                 appState.inventoryZones.forEach(zone => {
                     if (!appState.inventoryZoneData.has(zone.id)) {
                          appState.inventoryZoneData.set(zone.id, new Set());
                     }
-
+                   
                     const div = document.createElement('div');
                     div.className = "p-3 bg-slate-800 rounded-lg";
                     div.innerHTML = `
@@ -400,7 +459,7 @@
                              <input type="file" id="file-input-${zone.id}" class="hidden" accept=".txt,.csv,.xlsx">
                         </div>
                     `;
-
+                    
                     const existingData = appState.inventoryZoneData.get(zone.id);
                     if (existingData && existingData.size > 0) {
                         const infoP = div.querySelector(`#file-info-${zone.id}`);
@@ -417,7 +476,7 @@
                         document.getElementById(`file-input-${e.currentTarget.dataset.zoneId}`).click();
                     });
                 });
-
+                
                 document.querySelectorAll('.set-active-zone-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const zoneId = e.currentTarget.dataset.zoneId;
@@ -425,7 +484,7 @@
                         setActiveZone(newActiveId);
                     });
                 });
-
+                
                  document.querySelectorAll('input[type="file"]').forEach(input => {
                     if (input.id.startsWith('file-input-')) {
                         input.addEventListener('change', (e) => handleFileSelect(e, e.target.id.replace('file-input-', '')));
@@ -434,7 +493,7 @@
 
                 updateActiveZoneUI(appState.activeZoneId);
             }
-
+            
             function setActiveZone(zoneId) {
                 appState.activeZoneId = zoneId;
                 updateActiveZoneUI(zoneId);
@@ -469,37 +528,37 @@
                     clearBtn.classList.toggle('hidden', !activeId);
                 }
             }
-
+            
             function toggleHuntMode() {
                 const targetIdInput = document.getElementById('hunt-target-id');
-
+                
                 if (appState.huntMode.isActive) {
                     appState.huntMode = { isActive: false, targetId: null };
                     try {
-                        if (appState.html5QrCode && appState.html5QrCode.getState() === 2) {
+                        if (appState.html5QrCode && appState.html5QrCode.getState() === 2) { 
                             appState.html5QrCode.resume();
                         }
                     } catch (e) { console.warn("Não foi possível resumir o scanner.", e) }
-
+                    
                 } else {
-                    const targetId = targetIdInput.value.trim();
-                    if (!targetId) {
+                    const targetId = targetIdInput.value.trim(); 
+                    if (!targetId) { 
                         alert("Por favor, digite um ID para caçar.");
                         return;
                     }
-
+                    
                     appState.huntMode = { isActive: true, targetId: targetId };
-                    appState.isPaused = false;
-
+                    appState.isPaused = false; 
+                    
                     try {
-                        if (appState.html5QrCode && appState.html5QrCode.getState() === 1) {
-                            appState.html5QrCode.pause(true);
+                        if (appState.html5QrCode && appState.html5QrCode.getState() === 1) { 
+                            appState.html5QrCode.pause(true); 
                         }
                     } catch (e) { console.warn("Não foi possível pausar o scanner.", e) }
                 }
-
-                updateHuntModeUI();
-                saveToLocalStorage();
+                
+                updateHuntModeUI(); 
+                saveToLocalStorage(); 
             }
 
             function updateHuntModeUI() {
@@ -515,8 +574,8 @@
                     toggleBtn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
                     statusP.textContent = `CAÇANDO: ${appState.huntMode.targetId}`;
                 } else {
-                    targetIdInput.value = '';
-                    targetIdInput.disabled = false;
+                    targetIdInput.value = ''; 
+                    targetIdInput.disabled = false; 
                     toggleBtn.textContent = 'Caçar';
                     toggleBtn.classList.replace('bg-red-600', 'bg-blue-600');
                     toggleBtn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
@@ -528,15 +587,15 @@
             function handleFileSelect(event, zoneId) {
                 const file = event.target.files[0]; if (!file) return;
                 const isMainSearch = zoneId === 'main';
-
+                
                 const reader = new FileReader();
                 const processIds = (ids, fileName) => {
                     const idSet = new Set(ids);
                     if (isMainSearch) {
                         appState.idsToFind = idSet;
-                        appState.foundIds = [];
+                        appState.foundIds = []; 
                         appState.scanHistory = [];
-                        appState.scanLog = [];
+                        appState.scanLog = []; 
                         appState.notFoundIds = [];
                         document.getElementById('file-info').textContent = `"${fileName}" (${ids.length} IDs)`;
                         updateFoundListUI();
@@ -548,8 +607,8 @@
                          document.getElementById(`file-info-${zoneId}`).textContent = `${ids.length} IDs carregados.`;
                          document.getElementById(`file-info-${zoneId}`).classList.add('text-green-400');
                     }
-                    saveToLocalStorage();
-                    buildAnalyzerUI();
+                    saveToLocalStorage(); 
+                    buildAnalyzerUI(); 
                 };
 
                 if (file.name.endsWith('.xlsx')) {
@@ -572,26 +631,26 @@
                     reader.readAsText(file);
                 }
             }
-
+            
             function processScan(scannedId) {
                 if (appState.huntMode.isActive) {
                     if (scannedId === appState.huntMode.targetId) {
                         showFeedback('hunt_success', scannedId, "ITEM-ALVO ENCONTRADO!");
-                        toggleHuntMode();
+                        toggleHuntMode(); 
                     }
-                    return;
+                    return; 
                 }
 
                 if (appState.isPaused) return;
 
                 if (appState.isFastMode) {
                     const now = Date.now();
-                    if (now - appState.lastScanTime < 350) return;
+                    if (now - appState.lastScanTime < 350) return; 
                     appState.lastScanTime = now;
                 } else {
-                    appState.isPaused = true;
+                    appState.isPaused = true; 
                 }
-
+                
                 const logEntry = { id: scannedId, time: new Date() };
 
                 const activeZoneId = appState.activeZoneId;
@@ -603,18 +662,18 @@
                         if (zoneId !== activeZoneId && idSet.has(scannedId)) {
                             const foundZone = appState.inventoryZones.find(z => z.id === zoneId);
                             const foundZoneName = foundZone ? foundZone.name.toUpperCase() : 'OUTRA ZONA';
-
+                            
                             logEntry.status = `Missort (Item de ${foundZoneName} em ${activeZoneName})`;
                             appState.scanLog.unshift(logEntry);
                             updateScanLogUI();
-
+                            
                             showFeedback('warning_missort', scannedId, `ALERTA: ITEM DE ${foundZoneName}`);
                             saveToLocalStorage();
-                            return;
+                            return; 
                         }
                     }
                 }
-
+                
                 if (appState.foundIds.some(item => item.id === scannedId)) {
                     logEntry.status = 'Duplicado';
                     appState.scanLog.unshift(logEntry);
@@ -622,19 +681,19 @@
                     showFeedback('warning', scannedId, 'JÁ ENCONTRADO');
                     return;
                 }
-
+                
                 if (appState.idsToFind.has(scannedId)) {
                     logEntry.status = 'Encontrado (Principal)';
                     appState.scanLog.unshift(logEntry);
                     updateScanLogUI();
-
+                    
                     showFeedback('success', scannedId);
                     appState.idsToFind.delete(scannedId);
                     appState.foundIds.unshift({ id: scannedId, timestamp: new Date() });
                     appState.scanHistory.push(new Date());
                     updateFoundListUI();
                     updateDashboard();
-                    saveToLocalStorage();
+                    saveToLocalStorage(); 
                     return;
                 }
 
@@ -642,45 +701,45 @@
                     if (idSet.has(scannedId)) {
                         const zone = appState.inventoryZones.find(z => z.id === zoneId);
                         const zoneName = zone ? zone.name.toUpperCase() : 'ZONA';
-
+                        
                         logEntry.status = `Encontrado (${zoneName})`;
                         appState.scanLog.unshift(logEntry);
                         updateScanLogUI();
-
+                        
                         showFeedback('success', scannedId, `ENCONTRADO (EM ${zoneName})`);
-
+                        
                         const currentCount = appState.zoneFinds.get(zoneId) || 0;
                         appState.zoneFinds.set(zoneId, currentCount + 1);
                         updateDashboard();
-                        saveToLocalStorage();
+                        saveToLocalStorage(); 
                         return;
                     }
                 }
-
+                
                 logEntry.status = 'Não Encontrado';
                 appState.scanLog.unshift(logEntry);
                 updateScanLogUI();
-
+                
                 appState.notFoundIds.unshift({ id: scannedId, timestamp: new Date() });
                 updateExceptionsListUI();
                 showFeedback('error', scannedId);
-                saveToLocalStorage();
+                saveToLocalStorage(); 
             }
-
+            
             function setupTabs() {
                 const tabButtons = document.querySelectorAll('.tab-btn');
                 tabButtons.forEach(button => {
                     button.addEventListener('click', () => {
                         const viewId = button.dataset.view;
                         appState.currentView = viewId;
-
+                        
                         tabButtons.forEach(btn => btn.classList.replace('tab-active', 'tab-inactive'));
                         button.classList.replace('tab-inactive', 'tab-active');
-
+                        
                         document.querySelectorAll('[data-view-content]').forEach(view => {
                             view.classList.toggle('hidden', view.dataset.viewContent !== viewId);
                         });
-
+                        
                         resumeScannerIfNeeded();
                     });
                 });
@@ -690,7 +749,7 @@
                 const selectA = document.getElementById('analysis-list-a');
                 const selectB = document.getElementById('analysis-list-b');
                 const defaultOption = '<option value="">Selecione uma lista...</option>';
-
+                
                 selectA.innerHTML = defaultOption;
                 selectB.innerHTML = defaultOption;
 
@@ -732,7 +791,7 @@
 
                 const ok_ids = [];
                 const sobra_ids = [];
-                const faltantes_ids = Array.from(setA);
+                const faltantes_ids = Array.from(setA); 
 
                 setB.forEach(id => {
                     if (setA.has(id)) {
@@ -766,7 +825,7 @@
                 }
 
                 let csvContent = "data:text/csv;charset=utf-8,Itens_OK,Itens_Sobra,Itens_Faltantes\n";
-
+                
                 const maxLength = Math.max(ok.length, sobra.length, faltantes.length);
 
                 for (let i = 0; i < maxLength; i++) {
@@ -799,7 +858,7 @@
                 link.setAttribute("download", `sessao_scanner_encontrados_${date}.csv`);
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
             }
-
+            
             function exportExceptions() {
                  if (appState.notFoundIds.length === 0) { alert("Nenhuma exceção foi encontrada para exportar."); return; }
                 let csvContent = "data:text/csv;charset=utf-8,ID_Nao_Encontrado,Data_Verificacao,Hora_Verificacao\n";
@@ -816,24 +875,37 @@
             }
 
             function startScanner() {
-                if (appState.html5QrCode && appState.html5QrCode.isScanning) {
-                    try { appState.html5QrCode.stop(); } catch(e) { console.warn("Erro ao parar scanner:", e); }
+                if (appState.html5QrCode) {
+                    try { 
+                        if (appState.html5QrCode.isScanning || appState.html5QrCode.getState() === 2) { // 2 = Paused
+                            appState.html5QrCode.stop(); 
+                        }
+                    } catch(e) { 
+                        console.warn("Erro ao parar scanner anterior:", e); 
+                        appState.html5QrCode = null; 
+                        document.getElementById('reader').innerHTML = ''; 
+                    }
                 }
+                
                 appState.html5QrCode = new Html5Qrcode("reader");
                 const config = { fps: 15, qrbox: (w, h) => { const s = Math.min(w, h) * 0.8; return { width: s, height: s }; } };
-
+                
                 appState.html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => processScan(decodedText))
                     .catch(err => {
                         if (appState.huntMode.isActive) {
                              console.warn("Modo caça ativado, scanner pausado por padrão.");
                         } else {
                              if (err && err.name !== 'NotAllowedError') {
-                                alert("ERRO AO INICIAR A CÂMARA: " + err.message);
+                                if (!err.message || !err.message.toLowerCase().includes('already started')) {
+                                     alert("ERRO AO INICIAR A CÂMARA: " + err.message);
+                                } else {
+                                     console.warn("Tentativa de iniciar scanner já iniciado:", err);
+                                }
                              }
                         }
                     });
             }
-
+            
             function updateFoundListUI() {
                 document.getElementById('found-count').textContent = appState.foundIds.length;
                 const foundList = document.getElementById('found-list');
@@ -843,7 +915,7 @@
                     foundList.innerHTML = appState.foundIds.map(item => `<li class="p-2 bg-slate-700 rounded-md text-white flex justify-between"><span>${item.id}</span><span class="text-xs text-slate-400">${item.timestamp.toLocaleTimeString('pt-BR')}</span></li>`).join('');
                 }
             }
-
+            
             function updateExceptionsListUI() {
                  document.getElementById('exceptions-count').textContent = appState.notFoundIds.length;
                 const exceptionsList = document.getElementById('exceptions-list');
@@ -853,19 +925,19 @@
                     exceptionsList.innerHTML = appState.notFoundIds.map(item => `<li class="p-2 bg-slate-700 rounded-md text-white flex justify-between"><span>${item.id}</span><span class="text-xs text-slate-400">${item.timestamp.toLocaleTimeString('pt-BR')}</span></li>`).join('');
                 }
             }
-
+            
             function updateScanLogUI() {
                 const logList = document.getElementById('scan-log-list');
                 if (appState.scanLog.length === 0) {
                     logList.innerHTML = '<li class="text-slate-500">Nenhuma atividade registrada.</li>';
                 } else {
-                    logList.innerHTML = appState.scanLog.slice(0, 50).map(item => {
+                    logList.innerHTML = appState.scanLog.slice(0, 50).map(item => { 
                         let statusColor = 'text-white';
                         if (item.status === 'Duplicado') statusColor = 'text-amber-400';
                         else if (item.status === 'Não Encontrado') statusColor = 'text-red-400';
                         else if (item.status.includes('Encontrado')) statusColor = 'text-green-400';
                         else if (item.status.includes('Missort')) statusColor = 'text-orange-400 font-bold';
-
+                        
                         return `<li class="p-2 bg-slate-800 rounded-md flex justify-between items-center">
                             <div>
                                 <span class="font-bold text-white">${item.id}</span>
@@ -882,7 +954,7 @@
                 const foundCount = appState.foundIds.length;
                 const progress = totalItems > 0 ? (foundCount / totalItems * 100) : 0;
                 document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
-
+                
                 if (appState.charts.progress) {
                     appState.charts.progress.data.datasets[0].data = [progress, 100 - progress];
                     appState.charts.progress.update();
@@ -905,7 +977,7 @@
                      document.getElementById('kpi-avg-time').textContent = '-- s';
                      document.getElementById('kpi-bpm').textContent = '--';
                 }
-
+                
                 const zoneFindsContainer = document.getElementById('zone-finds-container');
                 if (appState.zoneFinds.size === 0) {
                      zoneFindsContainer.innerHTML = '<p class="text-slate-500 text-center">Nenhum item de inventário escaneado ainda.</p>';
@@ -942,48 +1014,48 @@
                 const feedbackOverlay = document.getElementById('feedback-overlay');
                 let pulseClass = "feedback-pulse";
                 let bgColor = '';
-
+                
                 if (status === 'success') {
                     bgColor = 'radial-gradient(circle, rgba(34, 197, 94, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
                 } else if (status === 'warning') {
                     bgColor = 'radial-gradient(circle, rgba(245, 158, 11, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
                 } else if (status === 'warning_missort') {
-                    bgColor = 'radial-gradient(circle, rgba(249, 115, 22, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
+                    bgColor = 'radial-gradient(circle, rgba(249, 115, 22, 0.8) 0%, rgba(30, 41, 59, 0) 70%)'; 
                 } else if (status === 'hunt_success') {
-                    bgColor = 'radial-gradient(circle, rgba(134, 239, 172, 0.9) 0%, rgba(30, 41, 59, 0) 70%)';
-                    pulseClass = "hunt-success-pulse";
+                    bgColor = 'radial-gradient(circle, rgba(134, 239, 172, 0.9) 0%, rgba(30, 41, 59, 0) 70%)'; 
+                    pulseClass = "hunt-success-pulse"; 
                 } else { // error
                     bgColor = 'radial-gradient(circle, rgba(239, 68, 68, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
                 }
-
+                
                 feedbackOverlay.style.background = bgColor;
                 feedbackOverlay.innerHTML = `<div class="${pulseClass} text-center"><div class="text-6xl">${message}</div><div class="text-2xl mt-4 font-mono p-2 bg-black/30 rounded-lg">${scannedId}</div></div>`;
                 feedbackOverlay.style.opacity = '1';
-
-                playSound(status);
-
+                
+                playSound(status); 
+                
                 if (navigator.vibrate) {
                     if (status === 'success') navigator.vibrate(200);
                     else if (status === 'error') navigator.vibrate([100, 50, 100]);
                     else if (status === 'warning') navigator.vibrate([80, 80]);
-                    else if (status === 'warning_missort') navigator.vibrate([120, 60, 120]);
-                    else if (status === 'hunt_success') navigator.vibrate([500, 100, 500]);
+                    else if (status === 'warning_missort') navigator.vibrate([120, 60, 120]); 
+                    else if (status === 'hunt_success') navigator.vibrate([500, 100, 500]); 
                 }
-
+                
                 const isHunt = (status === 'hunt_success');
                 const currentDelay = (appState.isFastMode && !isHunt) ? 250 : SCAN_DELAY;
                 const finalDelay = isHunt ? 2500 : currentDelay;
-
+                
                 setTimeout(() => {
                     feedbackOverlay.style.opacity = '0';
-                    if (!appState.isFastMode && !isHunt) {
+                    if (!appState.isFastMode && !isHunt) { 
                         appState.isPaused = false;
                     }
                 }, finalDelay);
             }
-
+            
             function initAudio() { if (!appState.audioContext) appState.audioContext = new (window.AudioContext || window.webkitAudioContext)(); }
-
+            
             function playSound(type) {
                 if (!appState.audioContext) return;
                 try {
@@ -991,13 +1063,13 @@
                     const gain = appState.audioContext.createGain();
                     osc.connect(gain); gain.connect(appState.audioContext.destination);
                     gain.gain.setValueAtTime(0.3, appState.audioContext.currentTime);
-
-                    if (type === 'success') {
-                        osc.frequency.setValueAtTime(1200, osc.context.currentTime);
-                    } else if (type === 'error') {
-                        osc.frequency.setValueAtTime(180, osc.context.currentTime); osc.type = 'square';
-                    } else if (type === 'warning') {
-                        osc.frequency.setValueAtTime(600, osc.context.currentTime); osc.type = 'triangle';
+                    
+                    if (type === 'success') { 
+                        osc.frequency.setValueAtTime(1200, osc.context.currentTime); 
+                    } else if (type === 'error') { 
+                        osc.frequency.setValueAtTime(180, osc.context.currentTime); osc.type = 'square'; 
+                    } else if (type === 'warning') { 
+                        osc.frequency.setValueAtTime(600, osc.context.currentTime); osc.type = 'triangle'; 
                     } else if (type === 'warning_missort') {
                         osc.frequency.setValueAtTime(800, osc.context.currentTime);
                         osc.frequency.setValueAtTime(400, osc.context.currentTime + 0.07);
@@ -1006,15 +1078,15 @@
                         osc.frequency.setValueAtTime(1000, osc.context.currentTime);
                         osc.frequency.linearRampToValueAtTime(2000, osc.context.currentTime + 0.3);
                     }
-
-                    osc.start();
+                    
+                    osc.start(); 
                     osc.stop(appState.audioContext.currentTime + (type === 'hunt_success' ? 0.4 : 0.15));
                 } catch (e) {
                     console.error("Erro ao tocar som:", e);
                     appState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
             }
-
+            
             initialize();
 
             if ('serviceWorker' in navigator) {
