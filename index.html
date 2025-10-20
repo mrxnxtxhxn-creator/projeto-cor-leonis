@@ -10,13 +10,23 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Scanner">
     <link rel="manifest" href="manifest.json">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+        /* CORREÇÃO PARA O ESPAÇO AZUL (PROBLEMA 2) */
+        html, body {
+            height: 100%;
+            overflow: hidden; /* Previne o scroll da página */
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0f172a; 
+            position: relative;
+        }
         #reader__scan_region { border: 4px solid rgba(255, 255, 255, 0.5) !important; border-radius: 1.5rem; background: none !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.3); }
         .scan-line { position: absolute; left: 5%; top: 10px; width: 90%; height: 4px; background: linear-gradient(to right, transparent, #06b6d4, transparent); box-shadow: 0 0 15px #06b6d4, 0 0 5px #fff; border-radius: 4px; animation: scan-animation 2.5s infinite ease-in-out; }
         @keyframes scan-animation { 0% { transform: translateY(0); } 50% { transform: translateY(calc(100% - 20px)); } 100% { transform: translateY(0); } }
@@ -306,7 +316,7 @@
             function initialize() {
                 loadFromLocalStorage(); 
                 buildInventoryZoneUI(); 
-                buildAnalyzerUI(); // Constroi UI do Analisador
+                buildAnalyzerUI(); 
                 
                 document.getElementById('load-file-btn').addEventListener('click', () => document.getElementById('file-input').click());
                 document.getElementById('file-input').addEventListener('change', (e) => handleFileSelect(e, 'main'));
@@ -315,7 +325,6 @@
                 document.getElementById('clear-session-btn').addEventListener('click', clearSession); 
                 document.getElementById('fast-mode-toggle').addEventListener('change', toggleFastMode); 
                 document.getElementById('hunt-toggle-btn').addEventListener('click', toggleHuntMode);
-                // Listeners do Analisador
                 document.getElementById('run-analysis-btn').addEventListener('click', runListAnalysis);
                 document.getElementById('export-analysis-btn').addEventListener('click', exportAnalysisResults);
                 
@@ -521,7 +530,7 @@
                          document.getElementById(`file-info-${zoneId}`).classList.add('text-green-400');
                     }
                     saveToLocalStorage(); 
-                    buildAnalyzerUI(); // Atualiza dropdowns do analisador
+                    buildAnalyzerUI(); 
                 };
 
                 if (file.name.endsWith('.xlsx')) {
@@ -658,7 +667,6 @@
                 });
             }
 
-            // --- FUNÇÕES DO ANALISADOR (IDEIA C) ---
             function buildAnalyzerUI() {
                 const selectA = document.getElementById('analysis-list-a');
                 const selectB = document.getElementById('analysis-list-b');
@@ -989,6 +997,21 @@
             }
             
             initialize();
+
+            // *** REGISTRO DO SERVICE WORKER (PROBLEMA 1) ***
+            // Este código é novo e registra o arquivo sw.js
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js')
+                        .then(registration => {
+                            console.log('ServiceWorker registrado com sucesso: ', registration.scope);
+                        })
+                        .catch(error => {
+                            console.log('Falha ao registrar ServiceWorker: ', error);
+                        });
+                });
+            }
+
         });
     </script>
 </body>
