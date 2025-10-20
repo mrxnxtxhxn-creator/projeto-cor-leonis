@@ -24,7 +24,6 @@
         #controls-panel.open { transform: translateY(0); }
         .feedback-pulse { animation: pulse-feedback 0.8s ease-out; }
         @keyframes pulse-feedback { from { transform: scale(0.9); opacity: 0.7; } to { transform: scale(1); opacity: 1; } }
-        /* Animação para "Hunt Success" */
         .hunt-success-pulse { animation: hunt-pulse 0.5s ease-out 3; }
         @keyframes hunt-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.2); opacity: 0.8; } }
         
@@ -118,7 +117,7 @@
             <div data-view-content="inventario" class="hidden">
                 <h3 class="text-lg font-bold text-center text-white mb-4">Carregar Listas de Inventário por Zona</h3>
                 <div id="inventory-zones-container" class="space-y-4 max-h-64 overflow-y-auto pr-2">
-                    </div>
+                </div>
             </div>
             
             <div data-view-content="excecoes" class="hidden">
@@ -160,14 +159,40 @@
                 zoneFinds: new Map(), 
                 isFastMode: false, 
                 lastScanTime: 0,
-                // NOVOS ESTADOS (Ideia A & B)
                 activeZoneId: null,
                 huntMode: { isActive: false, targetId: null }
             };
             
             const controlsPanel = document.getElementById('controls-panel');
             const panelHandle = document.getElementById('panel-handle');
-            const togglePanel = () => controlsPanel.classList.toggle('open');
+            
+            // *** CORREÇÃO 1: Adicionada função para reativar o scanner ***
+            function resumeScannerIfNeeded() {
+                // Não reative se estivermos no Modo Caça (que deve ficar pausado)
+                if (appState.huntMode.isActive) return; 
+
+                if (appState.html5QrCode) {
+                    // getState(): 0=NOT_STARTED, 1=SCANNING, 2=PAUSED
+                    if (appState.html5QrCode.getState() === 2) { // 2 = PAUSED
+                        try {
+                            appState.html5QrCode.resume();
+                        } catch (e) {
+                            console.error("Falha ao resumir o scanner:", e);
+                            // Se falhar, tente reiniciar
+                            startScanner();
+                        }
+                    }
+                }
+            }
+
+            // *** CORREÇÃO 2: togglePanel agora chama a função de resumir ***
+            const togglePanel = () => {
+                controlsPanel.classList.toggle('open');
+                // Se o painel for FECHADO, tente resumir o scanner
+                if (!controlsPanel.classList.contains('open')) {
+                    resumeScannerIfNeeded();
+                }
+            };
             panelHandle.addEventListener('click', togglePanel);
             
             let touchStartY = 0;
@@ -175,12 +200,16 @@
             document.addEventListener('touchend', e => {
                 if (touchStartY === 0) return;
                 const touchEndY = e.changedTouches[0].clientY;
-                if (touchStartY - touchEndY > 50) controlsPanel.classList.add('open');
-                else if (touchEndY - touchStartY > 50) controlsPanel.classList.remove('open');
+                if (touchStartY - touchEndY > 50) {
+                    controlsPanel.classList.add('open');
+                } else if (touchEndY - touchStartY > 50) {
+                    controlsPanel.classList.remove('open');
+                    // *** CORREÇÃO 3: Deslizar para baixo também reativa o scanner ***
+                    resumeScannerIfNeeded(); 
+                }
                 touchStartY = 0;
             });
             
-            // --- FUNÇÕES DE PERSISTÊNCIA ATUALIZADAS ---
             function saveToLocalStorage() {
                 try {
                     const dataToSave = {
@@ -191,14 +220,12 @@
                         zoneFinds: Array.from(appState.zoneFinds.entries()),
                         scanHistory: appState.scanHistory,
                         scanLog: appState.scanLog,
-                        // Salva os novos estados
                         activeZoneId: appState.activeZoneId,
                         huntMode: appState.huntMode
                     };
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
                 } catch (e) {
                     console.error("Erro ao salvar no localStorage:", e);
-                    alert("Erro: Não foi possível salvar a sessão. O armazenamento pode estar cheio.");
                 }
             }
 
@@ -215,7 +242,6 @@
                     appState.zoneFinds = new Map(data.zoneFinds || []);
                     appState.scanHistory = (data.scanHistory || []).map(ts => new Date(ts));
                     appState.scanLog = (data.scanLog || []).map(item => ({...item, time: new Date(item.time)}));
-                    // Carrega os novos estados
                     appState.activeZoneId = data.activeZoneId || null;
                     appState.huntMode = data.huntMode || { isActive: false, targetId: null };
                     
@@ -251,7 +277,6 @@
                 document.getElementById('export-exceptions-btn').addEventListener('click', exportExceptions);
                 document.getElementById('clear-session-btn').addEventListener('click', clearSession); 
                 document.getElementById('fast-mode-toggle').addEventListener('change', toggleFastMode); 
-                // NOVO: Listeners para Ideia B
                 document.getElementById('hunt-toggle-btn').addEventListener('click', toggleHuntMode);
                 
                 document.body.addEventListener('click', initAudio, { once: true });
@@ -277,12 +302,10 @@
                 updateScanLogUI();
                 updateDashboard();
 
-                // NOVO: Aplica estados carregados à UI
                 updateActiveZoneUI(appState.activeZoneId);
                 updateHuntModeUI();
             }
 
-            // --- FUNÇÕES DA IDEIA A (Zona Ativa) ---
             function buildInventoryZoneUI() {
                 const container = document.getElementById('inventory-zones-container');
                 container.innerHTML = `
@@ -330,7 +353,6 @@
                 document.querySelectorAll('.set-active-zone-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const zoneId = e.currentTarget.dataset.zoneId;
-                        // Alternar: se clicar no mesmo, desativa.
                         const newActiveId = (appState.activeZoneId === zoneId) ? null : zoneId;
                         setActiveZone(newActiveId);
                     });
@@ -342,7 +364,6 @@
                     }
                 });
 
-                // Aplica o estado visual da zona ativa
                 updateActiveZoneUI(appState.activeZoneId);
             }
             
@@ -353,7 +374,6 @@
             }
 
             function updateActiveZoneUI(activeId) {
-                // Atualiza barra de status global
                 const statusBar = document.getElementById('global-status-bar');
                 if (activeId) {
                     const zone = appState.inventoryZones.find(z => z.id === activeId);
@@ -364,7 +384,6 @@
                     statusBar.className = 'fixed top-0 left-0 right-0 z-20 p-2 text-center text-sm transition-all duration-300';
                 }
 
-                // Atualiza botões
                 document.querySelectorAll('.set-active-zone-btn').forEach(btn => {
                     if (btn.dataset.zoneId === activeId) {
                         btn.textContent = 'ATIVA';
@@ -377,14 +396,13 @@
                     }
                 });
 
-                // Mostra/Esconde botão de limpar
                 const clearBtn = document.getElementById('clear-active-zone-btn');
                 if (clearBtn) {
                     clearBtn.classList.toggle('hidden', !activeId);
                 }
             }
             
-            // --- FUNÇÕES DA IDEIA B (Caça ao Tesouro) ---
+            // *** CORREÇÃO 4: Lógica do Modo Caça corrigida ***
             function toggleHuntMode() {
                 const targetIdInput = document.getElementById('hunt-target-id');
                 const targetId = targetIdInput.value.trim();
@@ -392,6 +410,10 @@
                 if (appState.huntMode.isActive) {
                     // Desativar modo caça
                     appState.huntMode = { isActive: false, targetId: null };
+                    // FIX: Resume o scanner
+                    if (appState.html5QrCode && appState.html5QrCode.getState() === 2) { // 2 = PAUSED
+                        appState.html5QrCode.resume();
+                    }
                 } else {
                     // Ativar modo caça
                     if (!targetId) {
@@ -399,9 +421,11 @@
                         return;
                     }
                     appState.huntMode = { isActive: true, targetId: targetId };
-                    // Pausa o scanner se estiver no meio de um bip
-                    appState.isPaused = false; 
-                    if(appState.html5QrCode) appState.html5QrCode.pause(false);
+                    appState.isPaused = false; // Previne a lógica de pausa normal
+                    // FIX: Pausa o scanner
+                    if (appState.html5QrCode && appState.html5QrCode.getState() === 1) { // 1 = SCANNING
+                        appState.html5QrCode.pause(true); 
+                    }
                 }
                 updateHuntModeUI();
                 saveToLocalStorage();
@@ -477,21 +501,15 @@
                 }
             }
             
-            // --- FUNÇÃO PROCESSSCAN SUPER ATUALIZADA ---
             function processScan(scannedId) {
-                // 1. MODO CAÇA AO TESOURO (Ideia B)
-                // Se o modo caça está ativo, ele tem prioridade MÁXIMA.
                 if (appState.huntMode.isActive) {
                     if (scannedId === appState.huntMode.targetId) {
-                        // ENCONTROU O ALVO!
                         showFeedback('hunt_success', scannedId, "ITEM-ALVO ENCONTRADO!");
-                        toggleHuntMode(); // Desativa o modo caça
+                        toggleHuntMode(); 
                     }
-                    // Se não for o item caçado, ignora TOTALMENTE o bip.
                     return; 
                 }
 
-                // Se não está no modo caça, continua o fluxo normal...
                 if (appState.isPaused) return;
 
                 if (appState.isFastMode) {
@@ -504,16 +522,13 @@
                 
                 const logEntry = { id: scannedId, time: new Date() };
 
-                // 2. MODO ZONA ATIVA (Ideia A - Detecção de Missort)
                 const activeZoneId = appState.activeZoneId;
                 if (activeZoneId) {
                     const activeZone = appState.inventoryZones.find(z => z.id === activeZoneId);
                     const activeZoneName = activeZone ? activeZone.name.toUpperCase() : 'ATIVA';
 
-                    // Verifica se o item pertence a QUALQUER *OUTRA* zona
                     for (const [zoneId, idSet] of appState.inventoryZoneData.entries()) {
                         if (zoneId !== activeZoneId && idSet.has(scannedId)) {
-                            // É UM MISSORT!
                             const foundZone = appState.inventoryZones.find(z => z.id === zoneId);
                             const foundZoneName = foundZone ? foundZone.name.toUpperCase() : 'OUTRA ZONA';
                             
@@ -523,15 +538,11 @@
                             
                             showFeedback('warning_missort', scannedId, `ALERTA: ITEM DE ${foundZoneName}`);
                             saveToLocalStorage();
-                            return; // Para o processamento aqui
+                            return; 
                         }
                     }
                 }
                 
-                // --- FLUXO NORMAL DE VERIFICAÇÃO ---
-                // (Só chega aqui se NÃO for um missort e NÃO estiver em modo caça)
-
-                // 3. Verifica se já foi encontrado (na lista principal)
                 if (appState.foundIds.some(item => item.id === scannedId)) {
                     logEntry.status = 'Duplicado';
                     appState.scanLog.unshift(logEntry);
@@ -540,7 +551,6 @@
                     return;
                 }
                 
-                // 4. Verifica a lista principal
                 if (appState.idsToFind.has(scannedId)) {
                     logEntry.status = 'Encontrado (Principal)';
                     appState.scanLog.unshift(logEntry);
@@ -556,12 +566,8 @@
                     return;
                 }
 
-                // 5. Verifica as Zonas de Inventário (para fins de log/contagem)
                 for (const [zoneId, idSet] of appState.inventoryZoneData.entries()) {
                     if (idSet.has(scannedId)) {
-                        // Nota: Se a Zona Ativa (Ideia A) estiver ligada, este código só
-                        // será executado se o item pertencer à zona ativa (pois o missort
-                        // já foi tratado acima).
                         const zone = appState.inventoryZones.find(z => z.id === zoneId);
                         const zoneName = zone ? zone.name.toUpperCase() : 'ZONA';
                         
@@ -579,7 +585,6 @@
                     }
                 }
                 
-                // 6. Se não encontrou em lugar nenhum (Exceção)
                 logEntry.status = 'Não Encontrado';
                 appState.scanLog.unshift(logEntry);
                 updateScanLogUI();
@@ -603,6 +608,9 @@
                         document.querySelectorAll('[data-view-content]').forEach(view => {
                             view.classList.toggle('hidden', view.dataset.viewContent !== viewId);
                         });
+                        
+                        // *** CORREÇÃO 5: Tente resumir o scanner ao trocar de abas ***
+                        resumeScannerIfNeeded();
                     });
                 });
             }
@@ -638,10 +646,18 @@
             }
 
             function startScanner() {
+                if (appState.html5QrCode && appState.html5QrCode.isScanning) {
+                    appState.html5QrCode.stop();
+                }
                 appState.html5QrCode = new Html5Qrcode("reader");
                 const config = { fps: 15, qrbox: (w, h) => { const s = Math.min(w, h) * 0.8; return { width: s, height: s }; } };
                 appState.html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => processScan(decodedText))
-                    .catch(err => alert("ERRO AO INICIAR A CÂMARA: Por favor, verifique se deu permissão de acesso à câmara."));
+                    .catch(err => {
+                        // Não alerte se já estivermos no modo de caça (o que pausa o scanner)
+                        if (!appState.huntMode.isActive) {
+                             alert("ERRO AO INICIAR A CÂMARA: Por favor, verifique se deu permissão de acesso à câmara.");
+                        }
+                    });
             }
             
             function updateFoundListUI() {
@@ -690,7 +706,7 @@
             function updateDashboard() {
                 const totalItems = appState.idsToFind.size + appState.foundIds.length;
                 const foundCount = appState.foundIds.length;
-                const progress = totalItems > 0 ? (foundCount / totalItems) * 100 : 0;
+                const progress = totalItems > 0 ? (foundCount / totalItems * 100) : 0;
                 document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
                 appState.charts.progress.data.datasets[0].data = [progress, 100 - progress];
                 appState.charts.progress.update();
@@ -741,7 +757,6 @@
                 });
             }
 
-            // --- FUNÇÃO SHOWFEEDBACK ATUALIZADA (Ideia A & B) ---
             function showFeedback(status, scannedId, messageOverride) {
                 const message = messageOverride || (status === 'success' ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
                 const feedbackOverlay = document.getElementById('feedback-overlay');
@@ -753,10 +768,10 @@
                 } else if (status === 'warning') {
                     bgColor = 'radial-gradient(circle, rgba(245, 158, 11, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
                 } else if (status === 'warning_missort') {
-                    bgColor = 'radial-gradient(circle, rgba(249, 115, 22, 0.8) 0%, rgba(30, 41, 59, 0) 70%)'; // Laranja
+                    bgColor = 'radial-gradient(circle, rgba(249, 115, 22, 0.8) 0%, rgba(30, 41, 59, 0) 70%)'; 
                 } else if (status === 'hunt_success') {
-                    bgColor = 'radial-gradient(circle, rgba(134, 239, 172, 0.9) 0%, rgba(30, 41, 59, 0) 70%)'; // Verde claro
-                    pulseClass = "hunt-success-pulse"; // Animação especial
+                    bgColor = 'radial-gradient(circle, rgba(134, 239, 172, 0.9) 0%, rgba(30, 41, 59, 0) 70%)'; 
+                    pulseClass = "hunt-success-pulse"; 
                 } else { // error
                     bgColor = 'radial-gradient(circle, rgba(239, 68, 68, 0.8) 0%, rgba(30, 41, 59, 0) 70%)';
                 }
@@ -765,27 +780,22 @@
                 feedbackOverlay.innerHTML = `<div class="${pulseClass} text-center"><div class="text-6xl">${message}</div><div class="text-2xl mt-4 font-mono p-2 bg-black/30 rounded-lg">${scannedId}</div></div>`;
                 feedbackOverlay.style.opacity = '1';
                 
-                playSound(status); // Toca o som correspondente
+                playSound(status); 
                 
                 if (navigator.vibrate) {
                     if (status === 'success') navigator.vibrate(200);
                     else if (status === 'error') navigator.vibrate([100, 50, 100]);
                     else if (status === 'warning') navigator.vibrate([80, 80]);
-                    else if (status === 'warning_missort') navigator.vibrate([120, 60, 120]); // Vibração de alerta
-                    else if (status === 'hunt_success') navigator.vibrate([500, 100, 500]); // Vibração longa
+                    else if (status === 'warning_missort') navigator.vibrate([120, 60, 120]); 
+                    else if (status === 'hunt_success') navigator.vibrate([500, 100, 500]); 
                 }
                 
-                // Modo caça SEMPRE pausa e usa delay longo
                 const isHunt = (status === 'hunt_success');
                 const currentDelay = (appState.isFastMode && !isHunt) ? 250 : SCAN_DELAY;
-                
-                // Se for caça, o delay é ainda maior para celebrar
                 const finalDelay = isHunt ? 2500 : currentDelay;
                 
                 setTimeout(() => {
                     feedbackOverlay.style.opacity = '0';
-                    // Só des-pausa se não estiver no modo rápido
-                    // E se não for o modo caça (que já foi desativado em toggleHuntMode)
                     if (!appState.isFastMode && !isHunt) { 
                         appState.isPaused = false;
                     }
@@ -794,7 +804,6 @@
             
             function initAudio() { if (!appState.audioContext) appState.audioContext = new (window.AudioContext || window.webkitAudioContext)(); }
             
-            // --- FUNÇÃO PLAYSOUND ATUALIZADA (Ideia A & B) ---
             function playSound(type) {
                 if (!appState.audioContext) return;
                 const osc = appState.audioContext.createOscillator();
@@ -809,12 +818,10 @@
                 } else if (type === 'warning') { 
                     osc.frequency.setValueAtTime(600, osc.context.currentTime); osc.type = 'triangle'; 
                 } else if (type === 'warning_missort') {
-                    // Som de alerta (ex: dois tons)
                     osc.frequency.setValueAtTime(800, osc.context.currentTime);
                     osc.frequency.setValueAtTime(400, osc.context.currentTime + 0.07);
                     osc.type = 'sawtooth';
                 } else if (type === 'hunt_success') {
-                    // Som de sucesso! (ex: subindo)
                     osc.frequency.setValueAtTime(1000, osc.context.currentTime);
                     osc.frequency.linearRampToValueAtTime(2000, osc.context.currentTime + 0.3);
                 }
