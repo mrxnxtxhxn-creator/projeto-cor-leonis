@@ -1,0 +1,16 @@
+{
+  "name": "Scanner de Inventário",
+  "short_name": "Scanner",
+  "description": "Ferramenta de scanner de inventário com análise de zona e missorts.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#06b6d4",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxsPSIjMDZiNmQ0Ij48cGF0aCBkPSJNMjAgMjBoMTB2NjBIMjB6TTM1IDIwaDV2NjBIMzV6TTQ1IDIwaDh2NjBINDF6TTYgMjBoM3Y2MEg2eiBNNTggMjBoNXY2MEg1OHpNNjggMjBoMTB2NjBINjh6TTgzIDIwaDl2NjBIOHN6Ii8+PC9zdmc+",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
