@@ -10,8 +10,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Scanner">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icon-192x192.png"> 
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -669,14 +667,12 @@
                 selectA.innerHTML = defaultOption;
                 selectB.innerHTML = defaultOption;
 
-                // Adiciona Ficheiro Principal
                 if (appState.idsToFind.size > 0) {
                     const opt = `<option value="main">Ficheiro Principal (${appState.idsToFind.size} IDs)</option>`;
                     selectA.innerHTML += opt;
                     selectB.innerHTML += opt;
                 }
 
-                // Adiciona Zonas Carregadas
                 appState.inventoryZoneData.forEach((idSet, zoneId) => {
                     if (idSet.size > 0) {
                         const zone = appState.inventoryZones.find(z => z.id === zoneId);
